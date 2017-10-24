@@ -1,4 +1,6 @@
 import { Injectable } from '@angular/core';
+import { LogPublisher } from './log-publishers';
+import { LogPublishersService } from './log-publishers.service';
 
 export enum LogLevel {
   All = 0,
@@ -10,31 +12,29 @@ export enum LogLevel {
   Off = 6
 }
 
-
-@Injectable()
-export class LogService {
-  level: LogLevel = LogLevel.All;
+export class LogEntry {
+  entryDate: Date = new Date();
   logWithDate: boolean = true;
 
-  constructor() { }
+  constructor(public message: string = '',
+              public level: LogLevel = LogLevel.Debug,
+              public extraInfo: any[] = []) {}
 
-  private shouldLog(level: LogLevel): boolean {
-    return this.level !== LogLevel.Off && level >= this.level;
-  }
+  buildLogString(): string {
+    let ret: string = '';
 
-  private writeToLog(msg: string, level: LogLevel, params: any[]) {
-    if(this.shouldLog(level)) {
-      let value: string = '';
-
-      if(this.logWithDate) {
-        value = new Date() + ' - ';
-      }
-      value += 'Type: ' + LogLevel[level];
-      value += ' - Message: ' + JSON.stringify(msg);
-      value += ' - Extra: ' + this.formatParams(params);
-
-      console.log(value);
+    if(this.logWithDate) {
+      ret = new Date() + ' - ';
     }
+
+    ret += 'Type: ' + LogLevel[this.level];
+    ret += ' - Message: ' + this.message;
+
+    if(this.extraInfo.length) {
+      ret += ' - Extra Info: ' + this.formatParams(this.extraInfo);
+    }
+
+    return ret;
   }
 
   private formatParams(params: any[]): string {
@@ -48,6 +48,33 @@ export class LogService {
     }
 
     return ret;
+  }
+}
+
+@Injectable()
+export class LogService {
+  level: LogLevel = LogLevel.All;
+  logWithDate: boolean = true;
+  publishers: LogPublisher[];
+
+  constructor(private publishersService: LogPublishersService) {
+    this.publishers = this.publishersService.publishers;
+   }
+
+  private shouldLog(level: LogLevel): boolean {
+    return this.level !== LogLevel.Off && level >= this.level;
+  }
+
+  private writeToLog(msg: string, level: LogLevel, params: any[]) {
+    if(this.shouldLog(level)) {
+      let entry: LogEntry = new LogEntry(msg, level, params);
+      entry.logWithDate = this.logWithDate;
+
+      // log the value to all pubs (console, webapi, etc)
+      for (let logger of this.publishers) {
+        logger.log(entry).subscribe(response => console.log(response));
+      }
+    }
   }
 
   debug(msg: string, ...optionalParams: any[]) {
